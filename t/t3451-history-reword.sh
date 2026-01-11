@@ -77,6 +77,53 @@ test_expect_success 'can reword commit in the middle' '
 	)
 '
 
+test_expect_success 'can reword commit in the middle even on detached head' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+		test_commit first &&
+		test_commit second &&
+		test_commit third_on_main &&
+		git checkout --detach HEAD^ &&
+		test_commit third_on_head &&
+
+		reword_with_message HEAD~ <<-EOF &&
+		second reworded
+		EOF
+
+		expect_log HEAD --branches --graph <<-\EOF
+		* third_on_head
+		| * third_on_main
+		|/  
+		* second reworded
+		* first
+		EOF
+	)
+'
+
+test_expect_success 'can reword the detached head' '
+	test_when_finished "rm -rf repo" &&
+	git init repo &&
+	(
+		cd repo &&
+		test_commit first &&
+		test_commit second &&
+		git checkout --detach HEAD &&
+		test_commit third &&
+
+		reword_with_message HEAD <<-EOF &&
+		third reworded
+		EOF
+
+		expect_log <<-\EOF
+		third reworded
+		second
+		first
+		EOF
+	)
+'
+
 test_expect_success 'can reword root commit' '
 	test_when_finished "rm -rf repo" &&
 	git init repo &&

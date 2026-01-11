@@ -183,9 +183,17 @@ static int handle_reference_updates(enum ref_action action,
 	struct strvec args = STRVEC_INIT;
 	struct strbuf err = STRBUF_INIT;
 	struct commit *head = NULL;
+	char *head_ref = NULL;
+	bool detached_head = false;
 	struct rev_info revs;
 	char hex[GIT_MAX_HEXSZ + 1];
 	int ret;
+
+	head_ref = refs_resolve_refdup(get_main_ref_store(repo), "HEAD",
+				       RESOLVE_REF_READING, NULL, NULL);
+	if (!strcmp(head_ref, "HEAD"))
+		detached_head = true;
+	free(head_ref);
 
 	repo_init_revisions(repo, &revs, NULL);
 	strvec_push(&args, "ignored");
@@ -234,6 +242,7 @@ static int handle_reference_updates(enum ref_action action,
 		strvec_push(&args, "HEAD");
 	} else {
 		strvec_push(&args, "--branches");
+		strvec_push(&args, "HEAD");
 	}
 
 	setup_revisions_from_strvec(&args, &revs, NULL);
@@ -278,9 +287,11 @@ static int handle_reference_updates(enum ref_action action,
 		     decoration;
 		     decoration = decoration->next)
 		{
-			if (decoration->type != DECORATION_REF_LOCAL)
+			if ((decoration->type != DECORATION_REF_HEAD ||
+			     (action != REF_ACTION_HEAD && !detached_head)) &&
+			    (decoration->type != DECORATION_REF_LOCAL ||
+			     action == REF_ACTION_HEAD))
 				continue;
-
 			ret = ref_transaction_update(transaction,
 						     decoration->name,
 						     &rewritten->object.oid,
