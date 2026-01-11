@@ -5,11 +5,11 @@
 #include "hex.h"
 #include "merge-ort.h"
 #include "object-name.h"
-#include "oidset.h"
 #include "parse-options.h"
 #include "refs.h"
 #include "replay.h"
 #include "revision.h"
+#include "strmap.h"
 #include "tree.h"
 
 static const char *short_commit_name(struct repository *repo,
@@ -256,7 +256,7 @@ static void replay_result_queue_update(struct replay_result *result,
 	result->updates_nr++;
 }
 
-int replay_revisions(struct repository *repo, struct rev_info *revs,
+int replay_revisions(struct rev_info *revs,
 		     struct replay_revisions_options *opts,
 		     struct replay_result *out)
 {
@@ -265,6 +265,7 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 	struct commit *last_commit = NULL;
 	struct commit *commit;
 	struct commit *onto = NULL;
+	struct repository *repo = revs->repo;
 	struct merge_options merge_opt;
 	struct merge_result result = {
 		.clean = 1,
@@ -328,8 +329,7 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 	}
 
 	if (!result.clean) {
-		out->merge_conflict = true;
-		ret = -1;
+		ret = 1;
 		goto out;
 	}
 
@@ -338,8 +338,6 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 		replay_result_queue_update(out, advance,
 					   &onto->object.oid,
 					   &last_commit->object.oid);
-
-	out->final_oid = last_commit->object.oid;
 
 	ret = 0;
 
