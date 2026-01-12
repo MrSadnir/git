@@ -167,7 +167,7 @@ int cmd_replay(int argc,
 		revs.simplify_history = 0;
 	}
 
-	ret = replay_revisions(repo, &revs, &opts, &result);
+	ret = replay_revisions(&revs, &opts, &result);
 	if (ret)
 		goto cleanup;
 
@@ -220,11 +220,5 @@ cleanup:
 	strbuf_release(&reflog_msg);
 	release_revisions(&revs);
 
-	if (ret) {
-		if (result.merge_conflict)
-			return 1;
-		return 128;
-	}
-
-	return 0;
+	return ret;
 }

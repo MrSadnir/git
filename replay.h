@@ -43,25 +43,6 @@ struct replay_result {
 		struct object_id new_oid;
 	} *updates;
 	size_t updates_nr, updates_alloc;
-
-	/* Set to true in case the replay failed with a merge conflict. */
-	bool merge_conflict;
-
-	/*
-	 * The final object ID that was rewritten. Note that this field has
-	 * somewhat special semantics and may or may not be what you want:
-	 *
-	 *   - If no commits were rewritten it will remain uninitialized.
-	 *
-	 *   - If a thicket of branches is rewritten it is undefined in which
-	 *     order those branches will be rewritten, and thus the final object
-	 *     ID may point to a different commit than you'd expect.
-	 *
-	 * That being said, this field can still be useful when you know that
-	 * you only replay a single strand of commits. In that case, the final
-	 * commit will point to the tip of the rewritten strand of commits.
-	 */
-	struct object_id final_oid;
 };
 
 void replay_result_release(struct replay_result *result);
@@ -73,7 +54,7 @@ void replay_result_release(struct replay_result *result);
  *
  * Returns 0 on success, a negative error code otherwise.
  */
-int replay_revisions(struct repository *repo, struct rev_info *revs,
+int replay_revisions(struct rev_info *revs,
 		     struct replay_revisions_options *opts,
 		     struct replay_result *out);
 

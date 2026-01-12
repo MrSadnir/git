@@ -178,16 +178,22 @@ static int handle_reference_updates(enum ref_action action,
 {
 	const struct name_decoration *decoration;
 	struct replay_revisions_options opts = { 0 };
-	struct replay_result result = {
-		.final_oid = rewritten->object.oid,
-	};
+	struct replay_result result = { 0 };
 	struct ref_transaction *transaction = NULL;
 	struct strvec args = STRVEC_INIT;
 	struct strbuf err = STRBUF_INIT;
 	struct commit *head = NULL;
+	char *head_ref = NULL;
+	bool detached_head = false;
 	struct rev_info revs;
 	char hex[GIT_MAX_HEXSZ + 1];
 	int ret;
+
+	head_ref = refs_resolve_refdup(get_main_ref_store(repo), "HEAD",
+				       RESOLVE_REF_READING, NULL, NULL);
+	if (!strcmp(head_ref, "HEAD"))
+		detached_head = true;
+	free(head_ref);
 
 	repo_init_revisions(repo, &revs, NULL);
 	strvec_push(&args, "ignored");
@@ -233,9 +239,10 @@ static int handle_reference_updates(enum ref_action action,
 			goto out;
 		}
 
-		strvec_push(&args, oid_to_hex(&head->object.oid));
+		strvec_push(&args, "HEAD");
 	} else {
 		strvec_push(&args, "--branches");
+		strvec_push(&args, "HEAD");
 	}
 
 	setup_revisions_from_strvec(&args, &revs, NULL);
@@ -244,13 +251,14 @@ static int handle_reference_updates(enum ref_action action,
 
 	opts.onto = oid_to_hex_r(hex, &rewritten->object.oid);
 
-	ret = replay_revisions(repo, &revs, &opts, &result);
+	ret = replay_revisions(&revs, &opts, &result);
 	if (ret)
 		goto out;
 
 	switch (action) {
 	case REF_ACTION_DEFAULT:
 	case REF_ACTION_BRANCHES:
+	case REF_ACTION_HEAD:
 		transaction = ref_store_transaction_begin(get_main_ref_store(repo), 0, &err);
 		if (!transaction) {
 			ret = error(_("failed to begin ref transaction: %s"), err.buf);
@@ -279,9 +287,11 @@ static int handle_reference_updates(enum ref_action action,
 		     decoration;
 		     decoration = decoration->next)
 		{
-			if (decoration->type != DECORATION_REF_LOCAL)
+			if ((decoration->type != DECORATION_REF_HEAD ||
+			     (action != REF_ACTION_HEAD && !detached_head)) &&
+			    (decoration->type != DECORATION_REF_LOCAL ||
+			     action == REF_ACTION_HEAD))
 				continue;
-
 			ret = ref_transaction_update(transaction,
 						     decoration->name,
 						     &rewritten->object.oid,
@@ -299,13 +309,6 @@ static int handle_reference_updates(enum ref_action action,
 			goto out;
 		}
 
-		break;
-	case REF_ACTION_HEAD:
-		ret = refs_update_ref(get_main_ref_store(repo), reflog_msg, "HEAD",
-				      &result.final_oid, &head->object.oid, 0,
-				      UPDATE_REFS_MSG_ON_ERR);
-		if (ret)
-			goto out;
 		break;
 	case REF_ACTION_PRINT:
 		for (size_t i = 0; i < result.updates_nr; i++)

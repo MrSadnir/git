@@ -5,11 +5,11 @@
 #include "hex.h"
 #include "merge-ort.h"
 #include "object-name.h"
-#include "oidset.h"
 #include "parse-options.h"
 #include "refs.h"
 #include "replay.h"
 #include "revision.h"
+#include "strmap.h"
 #include "tree.h"
 
 static const char *short_commit_name(struct repository *repo,
@@ -151,11 +151,20 @@ static void get_ref_information(struct repository *repo,
 static void set_up_replay_mode(struct repository *repo,
 			       struct rev_cmdline_info *cmd_info,
 			       const char *onto_name,
+			       bool *detached_head,
 			       char **advance_name,
 			       struct commit **onto,
 			       struct strset **update_refs)
 {
 	struct ref_info rinfo;
+	char *head_ref;
+
+	*detached_head = false;
+	head_ref = refs_resolve_refdup(get_main_ref_store(repo), "HEAD",
+				       RESOLVE_REF_READING, NULL, NULL);
+	if (!strcmp(head_ref, "HEAD"))
+		*detached_head = true;
+	free(head_ref);
 
 	get_ref_information(repo, cmd_info, &rinfo);
 	if (!rinfo.positive_refexprs)
@@ -256,7 +265,7 @@ static void replay_result_queue_update(struct replay_result *result,
 	result->updates_nr++;
 }
 
-int replay_revisions(struct repository *repo, struct rev_info *revs,
+int replay_revisions(struct rev_info *revs,
 		     struct replay_revisions_options *opts,
 		     struct replay_result *out)
 {
@@ -265,16 +274,18 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 	struct commit *last_commit = NULL;
 	struct commit *commit;
 	struct commit *onto = NULL;
+	struct repository *repo = revs->repo;
 	struct merge_options merge_opt;
 	struct merge_result result = {
 		.clean = 1,
 	};
 	char *advance;
+	bool detached_head;
 	int ret;
 
 	advance = xstrdup_or_null(opts->advance);
-	set_up_replay_mode(repo, &revs->cmdline, opts->onto, &advance,
-			   &onto, &update_refs);
+	set_up_replay_mode(repo, &revs->cmdline, opts->onto,
+			   &detached_head, &advance, &onto, &update_refs);
 
 	/* FIXME: Should allow replaying commits with the first as a root commit */
 
@@ -316,7 +327,9 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 		if (!decoration)
 			continue;
 		while (decoration) {
-			if (decoration->type == DECORATION_REF_LOCAL &&
+			if ((decoration->type == DECORATION_REF_LOCAL ||
+			     (decoration->type == DECORATION_REF_HEAD &&
+			      detached_head)) &&
 			    (opts->contained || strset_contains(update_refs,
 								decoration->name))) {
 				replay_result_queue_update(out, decoration->name,
@@ -328,8 +341,7 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 	}
 
 	if (!result.clean) {
-		out->merge_conflict = true;
-		ret = -1;
+		ret = 1;
 		goto out;
 	}
 
@@ -338,8 +350,6 @@ int replay_revisions(struct repository *repo, struct rev_info *revs,
 		replay_result_queue_update(out, advance,
 					   &onto->object.oid,
 					   &last_commit->object.oid);
-
-	out->final_oid = last_commit->object.oid;
 
 	ret = 0;
 
